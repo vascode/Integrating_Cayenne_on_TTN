@@ -1,0 +1,81 @@
+dim rc                          //Declare rc as integer variable
+dim led : led = 0
+
+//******************************************************************************
+// Function and Subroutine definitions
+//******************************************************************************
+//==============================================================================
+//==============================================================================
+sub AssertResCode(byval rc as integer,byval tag as integer)
+  if (rc!=0) then
+    print "Failed with ";integer.h' rc;" at tag ";tag;"\n"
+  endif
+endsub
+
+//==============================================================================
+//==============================================================================
+function button0release()               //This function is called when the button 0 is released"
+	// gpiowrite(6,0)                         //Turns LED 0 off
+	
+	print "\nled = ";led
+	led = GpioRead(6)
+	print "\nled = ";led
+	if led == 0 then
+		led = 1
+		GpioWrite(6, 1)
+		
+	else
+		led = 0
+		GpioWrite(6, 0)
+		
+	endif	
+	
+	// print "Button 0 has been released \n"   //These lines are printed to the UART when the button is released
+	// print "LED 0 should now go out \n\n"
+endfunc 1
+
+//==============================================================================
+//==============================================================================
+function button0press()                 //This function is called when the button 0 is pressed"
+	gpiowrite(6,1)                         //Turns LED 0 on
+	print "Button 0 has been pressed \n"    //These lines are printed to the UART when the button is pressed
+	print "LED 0 will light while the button is pressed \n"
+endfunc 1
+
+//******************************************************************************
+// Handler definitions
+//******************************************************************************
+
+//******************************************************************************
+// Equivalent to main() in C
+//******************************************************************************
+
+rc = gpiosetfunc(5,1,2)                //Sets sio16 (Button 0) as a digital in with a weak pull up resistor
+AssertResCode(rc,1000)
+rc = gpiosetfunc(6,2,0)                //Sets sio18 (LED0) as a digital out
+AssertResCode(rc,1020)
+
+dim temp
+temp = gpioread(5)
+print "value for gpio 5: ";temp
+
+temp = gpioread(6)
+print "value for gpio 6: ";temp
+
+
+// rc = gpiobindevent(0,5,0)              //Binds a gpio transition high to an event. sio16 (button 0)
+// AssertResCode(rc,1040)
+// rc = gpiobindevent(1,5,1)              //Binds a gpio transition low to an event. sio16 (button 0)
+// AssertResCode(rc,1050)
+
+// onevent evgpiochan0 call button0release         //Detects when button 0 is released and calls the function
+// onevent evgpiochan1 call button0press           //Detects when button 0 is pressed and calls the function
+
+print "Ready to begin button and LED test \n"   //These lines are printed to the UART when the program is run
+print "Please press button 0 or button 1 \n\n"
+
+//------------------------------------------------------------------------------
+// Wait for a synchronous event.
+// An application can have multiple <WaitEvent> statements
+//------------------------------------------------------------------------------
+waitevent                       //When program is run it waits here until an event is detected
