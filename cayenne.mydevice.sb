@@ -48,33 +48,34 @@
 //******************************************************************************
 #include "RM1xx-defs.h"
 
-        //Set this to 0 to disable all debugging messages
+    //Set this to 0 to disable all debugging messages
 #define ENABLE_DEBUG_PRINTS                  1
+    //Size of i[]
 
-        //Size of i[]
 #define NUM_OF_I_PARAMS                     (4)
-        //Size of s$[] and must be at least 8 elements for BleSvcRegDevInfo()     
+    //Size of s$[]     
 #define NUM_OF_S_PARAMS                     (4)
 
-        //Button1 : SIO4 is connected to the CS line via J18
+    //Button1 : SIO4 is connected to the CS line via J18
 #define SPI_CS_PIN  	4
 
-        //SIO5 is connected to the temperature sensor
+    //SIO5 is connected to the temperature sensor
 #define TEMP_SENS_PIN 	5
-
+    
+    //SIO28 is connected to Button2 with a jumper on DVK	
 #define BUTTON2 		28
 
-		//SIO6 is connected to LED5
+    //SIO6 is connected to LED5
 #define LED5 			6
 
-        //Set to 1 to automatically join the LoRa network at startup
+    //Set to 1 to automatically join the LoRa network at startup
 #define AUTO_JOIN 		1
 
 //******************************************************************************
 // Register Error Handler as early as possible
 //******************************************************************************
 sub HandlerOnErr()
-  print "\n OnErr - ";GetLastError();"\n"
+    print "\n OnErr - ";GetLastError();"\n"
 endsub
 onerror next HandlerOnErr
 
@@ -85,25 +86,25 @@ onerror next HandlerOnErr
 //==============================================================================
 //==============================================================================
 sub AssertResCode(byval rc as integer,byval tag as integer)
-  if rc!=0 then
-    print "\nFailed with ";integer.h' rc;" at tag ";tag
-  endif
+    if rc!=0 then
+        print "\nFailed with ";integer.h' rc;" at tag ";tag
+    endif
 endsub
 
 //==============================================================================
 //==============================================================================
 sub DbgMsgVal(byval msg$ as string, byval vl as integer)
-  if (ENABLE_DEBUG_PRINTS!=0) then
-    print "\n";msg$;" ";vl
-  endif
+    if (ENABLE_DEBUG_PRINTS!=0) then
+        print "\n";msg$;" ";vl
+    endif
 endsub
 
 //==============================================================================
 //==============================================================================
 sub DbgMsg(byval msg$ as string)
-  if (ENABLE_DEBUG_PRINTS!=0) then
-    print "\n";msg$
-  endif
+    if (ENABLE_DEBUG_PRINTS!=0) then
+        print "\n";msg$
+    endif
 endsub
 
 //******************************************************************************
@@ -126,7 +127,7 @@ dim str$
 dim ok$,er$,pr$
 
 dim i[NUM_OF_I_PARAMS]      // index 0 used for return values
-dim s$[NUM_OF_S_PARAMS]    // must be at least 8 elements for BleSvcRegDevInfo()
+dim s$[NUM_OF_S_PARAMS]    // values stored in NVRAM (AppEUI and DevAddr) are stored here
 
 dim urtcmd$                 //cmd line from uart
 dim tkn$,tlen               //used by command parser
@@ -155,25 +156,25 @@ ENDSUB
 
 //==============================================================================
 sub UartRsp(rsp as integer)
-  if rsp == 0 then
-    print ok$;pr$
-  elseif rsp > 0 then 
-    print er$;integer.h' rsp;pr$
-  endif
-  urts = rsp
+    if rsp == 0 then
+        print ok$;pr$
+    elseif rsp > 0 then 
+        print er$;integer.h' rsp;pr$
+    endif
+    urts = rsp
 endsub
 
 //-------------------------------------------------------------------------
 //-------------------------------------------------------------------------
 function ExtractIntTokens(u$,stIdx,num)
-  while num>0
-    tlen = ExtractIntToken(u$,i[stIdx])
-    if tlen == 0 then
-      exitfunc 4
-    endif
-    num=num-1
-    stIdx = stIdx+1
-  endwhile
+    while num>0
+        tlen = ExtractIntToken(u$,i[stIdx])
+        if tlen == 0 then
+            exitfunc 4
+        endif
+        num=num-1
+        stIdx = stIdx+1
+    endwhile
 endfunc 0
 
 //-------------------------------------------------------------------------
@@ -203,38 +204,36 @@ function ReadBtnState()
 endfunc ((rc&0x10)==0)
 
 function LoraPost()
-	dim hConn,hAttr,att$,dscd,lpp$,tx$,t$
-	lpp$="\01\67"
-	dim atm
-	atm = ReadTemp()
-	// print "atm = ";atm;"\r\n"
-	EndianSwap(atm)
+    dim hConn,hAttr,att$,dscd,lpp$,tx$,t$
+    lpp$="\01\67"
+    dim atm
+    atm = ReadTemp()
+    EndianSwap(atm)
 
-	rc=bleencode16(att$,atm,0)
-	// print "att$ = ";att$;"\r\n"
+    rc=bleencode16(att$,atm,0)
 
-	dim tst2$
-	tst2$ = "\02\02"
-	atm = ReadPwrSupplyMv()/10
-	EndianSwap(atm)
-	rc=bleencode16(tst2$,atm,2)
+    dim tst2$
+    tst2$ = "\02\02"
+    atm = ReadPwrSupplyMv()/10
+    EndianSwap(atm)
+    rc=bleencode16(tst2$,atm,2)
 
-	dim tst3$
-	atm = ReadBtnState()
-	tst3$ = "\03\00"
-	rc=bleencode8(tst3$,atm,2)
+    dim tst3$
+    atm = ReadBtnState()
+    tst3$ = "\03\00"
+    rc=bleencode8(tst3$,atm,2)
 
-	dim tst4$
-	tst4$ = "\04\01"
+    dim tst4$
+    tst4$ = "\04\01"
 	
-	if (led == 0) then
-		LEDVAL$ =  "\00"
-	else 
-		LEDVAL$ =  "\01"
-	endif
+    if (led == 0) then
+        LEDVAL$ =  "\00"
+    else 
+        LEDVAL$ =  "\01"
+    endif
 	
-	tx$=lpp$+att$ + tst2$ + tst3$ + tst4$ + LEDVAL$
-	rc = LORAMACTxData(1, tx$, 1)
+    tx$=lpp$+att$ + tst2$ + tst3$ + tst4$ + LEDVAL$
+    rc = LORAMACTxData(1, tx$, 1)
 endfunc 1
 
 //-------------------------------------------------------------------------
@@ -352,21 +351,24 @@ endfunc 1
 '//==============================================================================
 function HandlerLoRaJoined() as integer
     print "\nSuccessfully joined the LoRa network"
-	if (AUTO_JOIN == 1) then	
-		print "\nNow RM1xx will send data to Cayenne periodically"
-		timerstart(0, 10000, 1)
-	endif
+    if (AUTO_JOIN == 1) then	
+        print "\nNow RM1xx will send data to Cayenne periodically"
+        timerstart(0, 10000, 1)
+    endif
 endfunc 1
 
 function HandlerLoRaJoinFailed() as integer
     print "\nFailed to join the LoRa network"
 endfunc 1
+
 function HandlerLoRaTxTimeout() as integer
     print "\nLoRa TX Timeout"
 endfunc 1
+
 function HandlerLoRaRxTimeout() as integer
     print "\nLoRa RX Timeout"
 endfunc 1
+
 function HandlerLoRaRxError() as integer
     print "\nLoRa RX Error"
 endfunc 1
@@ -399,15 +401,15 @@ endfunc 1
 // handler for button2 press -> toggle LED5
 //==============================================================================
 function Button2Pressed()            
-	if (led == 0) then	
-		gpiowrite(LED5,1)	//Turns LED5 on
-		led = 1
-		print "\nButton2 pressed - LED5 turned on\n"
-	else 
-		gpiowrite(LED5,0)	//Turns LED5 off
-		led = 0
-		print "\nButton2 pressed - LED5 turned off\n"
-	endif	
+    if (led == 0) then	
+        gpiowrite(LED5,1)	//Turns LED5 on
+        led = 1
+        print "\nButton2 pressed - LED5 turned on\n"
+    else 
+        gpiowrite(LED5,0)	//Turns LED5 off
+        led = 0
+        print "\nButton2 pressed - LED5 turned off\n"
+    endif	
 endfunc 1
 
 //******************************************************************************
@@ -463,7 +465,7 @@ sub Initialise()
         endif
     endif
 
-    //setting Button1 as DIGITAL_OUT with initial high
+    //Set Button1 as DIGITAL_OUT with initial high
     rc=GpioSetFunc(SPI_CS_PIN, 2, 1)
     GpioWrite(SPI_CS_PIN, 1)
     rc=SpiOpen(0, 125000, 0, SPIHandle)
@@ -477,12 +479,12 @@ sub Initialise()
     rc=SpiWrite(wr$)
     GpioWrite(SPI_CS_PIN, 1)
 	
-	//Setting LED5 as GIDITAL_OUT with initial output low
-	rc = gpiosetfunc(LED5,2,0)
-	//Setting BUTTON2 as Digial_IN with weak pull-up
-	rc = gpiosetfunc(BUTTON2,1,2)
-	//Link Button1 to LED5
-	rc = GpioBindEvent(0, BUTTON2 ,1)	//Binds a gpio transition high to an event. 
+    //Set LED5 as GIDITAL_OUT with initial output low
+    rc = gpiosetfunc(LED5,2,0)
+    //Setting BUTTON2 as Digial_IN with weak pull-up
+    rc = gpiosetfunc(BUTTON2,1,2)
+    //Link Button1 to LED5
+    rc = GpioBindEvent(0, BUTTON2 ,1)	//Binds a gpio transition high to an event. 
 endsub
 
 //------------------------------------------------------------------------------
