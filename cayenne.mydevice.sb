@@ -204,35 +204,38 @@ function ReadBtnState()
 endfunc ((rc&0x10)==0)
 
 function LoraPost()
-    dim hConn,hAttr,att$,dscd,lpp$,tx$,t$
-    lpp$="\01\67"
+    dim hConn,hAttr,att$,dscd,tempVal$,tx$,t$
+    tempVal$="\01\67"
     dim atm
     atm = ReadTemp()
     EndianSwap(atm)
 
     rc=bleencode16(att$,atm,0)
 
-    dim tst2$
-    tst2$ = "\02\02"
+    dim powerVal$
+    powerVal$ = "\02\02"
     atm = ReadPwrSupplyMv()/10
     EndianSwap(atm)
-    rc=bleencode16(tst2$,atm,2)
+    rc=bleencode16(powerVal$,atm,2)
 
-    dim tst3$
+    dim bttn1State$
     atm = ReadBtnState()
-    tst3$ = "\03\00"
-    rc=bleencode8(tst3$,atm,2)
+    bttn1State$ = "\03\00"
+    rc=bleencode8(bttn1State$,atm,2)
 
-    dim tst4$
-    tst4$ = "\04\01"
+    dim led5State$
+    led5State$ = "\04\01"
 	
-    if (led == 0) then
-        LEDVAL$ =  "\00"
+    if (led == 0) then	
+        rc=strsetchr(led5State$,0,2)
+        // LEDVAL$ =  "\00"		
     else 
-        LEDVAL$ =  "\01"
+        rc=strsetchr(led5State$,1,2)
+        // LEDVAL$ =  "\01"
     endif
 	
-    tx$=lpp$+att$ + tst2$ + tst3$ + tst4$ + LEDVAL$
+    // tx$=tempVal$+att$ + powerVal$ + bttn1State$ + led5State$ + LEDVAL$
+	tx$=tempVal$+att$ + powerVal$ + bttn1State$ + led5State$
     rc = LORAMACTxData(1, tx$, 1)
 endfunc 1
 
@@ -357,18 +360,30 @@ function HandlerLoRaJoined() as integer
     endif
 endfunc 1
 
+'//==============================================================================
+'// This handler is called when there is a LoRa Join Fail event
+'//==============================================================================
 function HandlerLoRaJoinFailed() as integer
     print "\nFailed to join the LoRa network"
 endfunc 1
 
+'//==============================================================================
+'// This handler is called when there is a LoRa Tx Timeout event 
+'//==============================================================================
 function HandlerLoRaTxTimeout() as integer
     print "\nLoRa TX Timeout"
 endfunc 1
 
+'//==============================================================================
+'// This handler is called when there is a LoRa Rx Timeout event
+'//==============================================================================
 function HandlerLoRaRxTimeout() as integer
     print "\nLoRa RX Timeout"
 endfunc 1
 
+'//==============================================================================
+'// This handler is called when there is an error in the receive path
+'//==============================================================================
 function HandlerLoRaRxError() as integer
     print "\nLoRa RX Error"
 endfunc 1
@@ -384,7 +399,7 @@ endfunc 1
 //==============================================================================
 // This handler is called an RxWindow has faied to revceive a sync pulse
 //==============================================================================
-function HandlerLoRaRxFail() As Integer
+function HandlerLoRaNoSync() As Integer
     str$ = "\nNo Sync pulse"
     PrintMsg(str$)
 endfunc 1
@@ -400,12 +415,12 @@ endfunc 1
 //==============================================================================
 // handler for button2 press -> toggle LED5
 //==============================================================================
-function Button2Pressed()            
+function Button2Pressed()
     if (led == 0) then	
-        gpiowrite(LED5,1)	//Turns LED5 on
+        gpiowrite(LED5,1)	//Turns LED5 on		
         led = 1
         print "\nButton2 pressed - LED5 turned on\n"
-    else 
+    else 	
         gpiowrite(LED5,0)	//Turns LED5 off
         led = 0
         print "\nButton2 pressed - LED5 turned off\n"
@@ -429,7 +444,7 @@ OnEvent  EVLORAMACTXTIMEOUT   call  HandlerLoRaTxTimeout
 OnEvent  EVLORAMACRXTIMEOUT   call  HandlerLoRaRxTimeout
 OnEvent  EVLORAMACRXERROR     call  HandlerLoRaRxError
 OnEvent  EVLORAMACTXDONE      call  HandlerLoRaTxDone
-OnEvent  EVLORAMACNOSYNC      call  HandlerLoRaRxFail
+OnEvent  EVLORAMACNOSYNC      call  HandlerLoRaNoSync
 OnEvent  EVLORAMACADR         call  HandlerLoRaAdr
 
 OnEvent  EVTMR0 			  call	LoraPost		 
