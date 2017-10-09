@@ -138,7 +138,7 @@ dim SPIHandle
 
 dim led : led = 0			//led status
 //******************************************************************************
-// Initialisse Global Variable
+// initialize Global Variable
 //******************************************************************************
 
 ok$    = "\nOK"
@@ -374,7 +374,7 @@ function HandlerLoRaRxError() as integer
 endfunc 1
 
 //==============================================================================
-// This handler is called when Teh TxDone signal has been recevied in the module
+// This handler is called when the TxDone signal has been received in the module
 //==============================================================================
 function HandlerLoRaTxDone() As Integer
     str$ = "\nTx Done"
@@ -384,7 +384,7 @@ endfunc 1
 //==============================================================================
 // This handler is called an RxWindow has faied to revceive a sync pulse
 //==============================================================================
-function HandlerLoRaNoSync() As Integer
+function HandlerLoRaRxFail() As Integer
     str$ = "\nNo Sync pulse"
     PrintMsg(str$)
 endfunc 1
@@ -429,7 +429,7 @@ OnEvent  EVLORAMACTXTIMEOUT   call  HandlerLoRaTxTimeout
 OnEvent  EVLORAMACRXTIMEOUT   call  HandlerLoRaRxTimeout
 OnEvent  EVLORAMACRXERROR     call  HandlerLoRaRxError
 OnEvent  EVLORAMACTXDONE      call  HandlerLoRaTxDone
-OnEvent  EVLORAMACNOSYNC      call  HandlerLoRaNoSync
+OnEvent  EVLORAMACNOSYNC      call  HandlerLoRaRxFail
 OnEvent  EVLORAMACADR         call  HandlerLoRaAdr
 
 OnEvent  EVTMR0 			  call	LoraPost		 
@@ -447,7 +447,6 @@ sub Initialise()
 
     dim wr$ : wr$ = "4"
     rc = LORAMACSetOption(LORAMAC_OPT_DATA_RATE, wr$)
-    // print "rc = ";rc;"\r\n"
 
     //Automatically join the LoRa network if set
     if (AUTO_JOIN == 1) then
