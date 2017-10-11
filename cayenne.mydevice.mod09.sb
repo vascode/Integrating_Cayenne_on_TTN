@@ -22,6 +22,36 @@
 // +++++                                                                      ++
 // +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 //
+// Description of this application: 
+// This app monitors temperature, Power supply level, Button1 & LED5 status on DVK
+// and then send them to Cayenne server over LoRaWAN network.
+//  
+// Button1 is connected to I/O Expander pin 4 on DVK. 
+// The I/O Expander is a Microchip MCP23S08 SPI device. The register map is 
+// below for reference. The datasheet for this device explains all registers 
+// in detail. This information is used in Initialise()
+//
+//  Name        Addr
+//  IODIR       0x00 
+//  IPOL        0x01 
+//  GPINTEN     0x02 
+//  DEFVAL      0x03 
+//  INTCON      0x04 
+//  IOCON       0x05 
+//  GPPU        0x06 
+//  INTF        0x07 
+//  INTCAP      0x08 
+//  GPIO        0x09 
+//  OLAT        0x0A 
+//
+//	Read op-code : 0x41
+//	Write op-code : 0x40
+// 
+//  Configure Inputs/Outputs by writing 0x10 to register 0x00
+//  IO7  IO6  IO5 IO4  IO3  IO2  IO1  IO0   // MCP23S08 pin
+//  n/a  n/a  n/a BUTN LED4 LED3 LED2 LED1  // RM1xx DVK pin
+//   0    0    0   1    0    0    0    0    // 0=output 1=input	
+//
 // This app provides for a command interface over the uart and the protocol is
 // as follows:-
 //
@@ -33,11 +63,11 @@
 //              (4) #INTaaaa# means a number in decimal, hex, octal or binary
 //                      format -> 23 == 0x17 == h'17 == o'23 == b'10111
 //                      aaaa is just a description
-//              (5) #HEXaaaa# means a string without delimitors consisting of hex 
+//              (5) #HEXaaaa# means a string without delimiters consisting of hex 
 //                      characters only aaaa is just a description
-//              (6) #STRaaaa# means a string without delimitors
+//              (6) #STRaaaa# means a string without delimiters
 //                      aaaa is just a description
-//              (7) "STRaaaa" means a string which must have the " delimitor
+//              (7) "STRaaaa" means a string which must have the " delimiter
 //                      aaaa is just a description
 // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
@@ -87,7 +117,6 @@ onerror next HandlerOnErr
 //******************************************************************************
 
 //==============================================================================
-//==============================================================================
 sub AssertResCode(byval rc as integer,byval tag as integer)
     if rc!=0 then
         print "\nFailed with ";integer.h' rc;" at tag ";tag
@@ -95,14 +124,12 @@ sub AssertResCode(byval rc as integer,byval tag as integer)
 endsub
 
 //==============================================================================
-//==============================================================================
 sub DbgMsgVal(byval msg$ as string, byval vl as integer)
     if (ENABLE_DEBUG_PRINTS!=0) then
         print "\n";msg$;" ";vl
     endif
 endsub
 
-//==============================================================================
 //==============================================================================
 sub DbgMsg(byval msg$ as string)
     if (ENABLE_DEBUG_PRINTS!=0) then
@@ -124,22 +151,23 @@ endsub
 
 dim rc
 dim stRsp$ as string        //Uart rx data is stored here
-dim str$
+dim str$					//Store data for string
 
-dim ok$,er$,pr$
+dim ok$,er$,pr$				//String for OK, ERROR and carriage return
 
-dim i[NUM_OF_I_PARAMS]      // index 0 used for return values
-dim s$[NUM_OF_S_PARAMS]    // values stored in NVRAM (AppEUI and DevAddr) are stored here
+dim i[NUM_OF_I_PARAMS]      //Index 0 used for return values
+dim s$[NUM_OF_S_PARAMS]     //Values stored in NVRAM (AppEUI and DevAddr) are stored here
 
-dim urtcmd$                 //cmd line from uart
-dim tkn$,tlen               //used by command parser
-dim urts                    //will be <0 if uart parser suspended
+dim urtcmd$                 //Cmd line from uart
+dim tkn$,tlen               //Used by command parser
+dim urts                    //Will be <0 if uart parser suspended
 
-dim SPIHandle
+dim SPIHandle				//Handle for Microchip MCP23S08 SPI peripheral
 
 dim led : led = 0           //led status
 
-dim okToTx : okToTx = 1     //change to 0 at data Tx and 1 at EVLORAMACNEXTTX   
+dim okToTx : okToTx = 1     //Available duty cycle on one of sub-band (only matters in EU & AS)
+							//Change to 0 at data Tx and 1 at EVLORAMACNEXTTX   
     
 //******************************************************************************
 // initialize Global Variable
@@ -154,6 +182,8 @@ urts=0 //not suspended
 //******************************************************************************
 // Function and Subroutine definitions
 //******************************************************************************
+
+//==============================================================================
 SUB PrintMsg(str$)
     rc = UartWrite(str$)
 ENDSUB
@@ -168,8 +198,7 @@ sub UartRsp(rsp as integer)
     urts = rsp
 endsub
 
-//-------------------------------------------------------------------------
-//-------------------------------------------------------------------------
+//==============================================================================
 function ExtractIntTokens(u$,stIdx,num)
     while num>0
         tlen = ExtractIntToken(u$,i[stIdx])
@@ -181,23 +210,21 @@ function ExtractIntTokens(u$,stIdx,num)
     endwhile
 endfunc 0
 
-//-------------------------------------------------------------------------
-//-------------------------------------------------------------------------
+//==============================================================================
 function ReadTemp()
     dim tempC : tempC = GpioRead(TEMP_SENS_PIN)
     tempC = ((19028992-36000*tempC)/11971)
 endfunc tempC
 
-//-------------------------------------------------------------------------
-//-------------------------------------------------------------------------
+//==============================================================================
 sub EndianSwap(byref atm)
     atm = (atm >> 8 & 0xFF) | (atm << 8 & 0xFF00)
 endsub
 
-//-------------------------------------------------------------------------
-//-------------------------------------------------------------------------
+//==============================================================================
 function ReadBtnState()
     dim wr$, rd$
+	//Read (opcode 0x41) PORT/GPIO Register (0x09)
     wr$="\41\09\00"
     GpioWrite(SPI_CS_PIN,0)
     rc=SpiReadWrite(wr$,rd$)
@@ -207,12 +234,17 @@ function ReadBtnState()
     // Check if IO4 is grounded
 endfunc ((rc&0x10)==0)
 
+//==============================================================================
+// Read temperature, power supply level, Button1 & LED5 status on DVK
+// and send them over LoRaWAN network in a format that Cayenne can understand
+//==============================================================================
 function LoraPost()
     if (okToTx == 1) then 
+		//There is available duty cycle 
         dim tempType$, tempVal$,txData$, powerVal$, bttn1State$, led5State$
         dim atm, theoreticalMax, actualMax
         
-        //  LPP (Low Power Payload) for Cayenne - first byte is data channel and second byte is data type 
+        //Data format for Cayenne - first byte is data channel and second byte is data type 
         tempType$="\01\67"    // "\67" : Temperature 
         atm = ReadTemp()
         EndianSwap(atm)
@@ -240,24 +272,33 @@ function LoraPost()
         //Check the size of data is within maximum payload size 
         rc = LoramacQueryTxPossible(strlen(txData$), theoreticalMax, actualMax)
         if (rc == 0) then
+			//Current data rate can handle the outbound data size 
             rc = LORAMACTxData(1, txData$, 1)
         else
             print "\nData payload is too large"
             print "\nTheoretical max payload at current datarate : ";theoreticalMax;
             print "\nActual max payload : ";actualMax;
             print "\nCurrent data size : ";strlen(txData$)
+			print "\nSwitching to DR4 to allow higher max payload"
+			dim wr$ : wr$ = "4"
+			rc = LORAMACSetOption(LORAMAC_OPT_DATA_RATE, wr$)
         endif
     else
         str$ = "\nThere is no available duty cycle"
         PrintMsg(str$)
-    okToTx = 0  //Need to wait for EVLORAMACNEXTTX to be 1 
+		okToTx = 0  //Will become 1 when EVLORAMACNEXTTX is triggered
     endif
-    
 endfunc 1
 
-//-------------------------------------------------------------------------
-//-------------------------------------------------------------------------
-
+//==============================================================================
+//#CMD#// lora join  
+//#CMD#// lora activate 
+//#CMD#// lora send  #STRdata#  #INTport#  #INTconfirm# 
+//#CMD#// lora post 
+//#CMD#// lora get  #INToptID#
+//#CMD#// lora set #INToptID#  #INToptVal# 
+//#CMD#// lora debug  #INTdebug#  #INTtxSio# #INTrxSio#
+//==============================================================================
 function _Lora()
     dim prAdr$ 
     dim val
@@ -300,8 +341,8 @@ endfunc 5
 //==============================================================================
 function OnUartCmd() as integer
     dim inputVoltage_mV
-    rc=1 //assume there is an error
-    tlen = ExtractStrToken(urtcmd$,tkn$) //get first token
+    rc=1 //Assume there is an error
+    tlen = ExtractStrToken(urtcmd$,tkn$) //Get first token
     if tlen == 0 then
         rc=0
     elseif tlen > 0 then
@@ -330,11 +371,11 @@ endfunc 1
 function HandlerUartRxCmd() as integer
     dim nMatch
     if urts < 0 then
-        //uart parser is suspended
+        //Uart parser is suspended
         exitfunc 1
     endif
 
-    //check if CR has been received
+    //Check if CR has been received
     nMatch=UartReadMatch(stRsp$,13)
     if nMatch!=0 then
         //CR exists in the input buffer
@@ -350,30 +391,30 @@ FUNCTION HandlerNextTx() As Integer
     okToTx = 1
 endfunc 1
 
-'//==============================================================================
-'// This handler is called when there is a LoRa TX Complete event
-'//==============================================================================
+//==============================================================================
+// This handler is called when there is a LoRa TX Complete event
+//==============================================================================
 function HandlerLoRaTxComp() as integer
     print "\nLoRa TX Complete Event"
 endfunc 1
 
-'//==============================================================================
-'// This handler is called when there is a LoRa RX Complete event
-'//==============================================================================
+//==============================================================================
+// This handler is called when there is a LoRa RX Complete event
+//==============================================================================
 function HandlerLoRaRxComp() as integer
     print "\nLoRa RX Complete Event"
 endfunc 1
 
-'//==============================================================================
-'// This handler is called when the LoRa Join procedure starts
-'//==============================================================================
+//==============================================================================
+// This handler is called when the LoRa Join procedure starts
+//==============================================================================
 function HandlerLoRaJoining() as integer
     print "\nAttempting to join the LoRa network"
 endfunc 1
 
-'//==============================================================================
-'// This handler is called when there is a LoRa Join Success Complete event
-'//==============================================================================
+//==============================================================================
+// This handler is called when there is a LoRa Join Success Complete event
+//==============================================================================
 function HandlerLoRaJoined() as integer
     print "\nSuccessfully joined the LoRa network"
     
@@ -387,33 +428,33 @@ function HandlerLoRaJoined() as integer
     endif
 endfunc 1
 
-'//==============================================================================
-'// This handler is called when there is a LoRa Join Fail event
-'//==============================================================================
+//==============================================================================
+// This handler is called when there is a LoRa Join Fail event
+//==============================================================================
 function HandlerLoRaJoinFailed() as integer
     str$ = "\nFailed to join the LoRa network"
     PrintMsg(str$)
 endfunc 1
 
-'//==============================================================================
-'// This handler is called when there is a LoRa Tx Timeout event 
-'//==============================================================================
+//==============================================================================
+// This handler is called when there is a LoRa Tx Timeout event 
+//==============================================================================
 function HandlerLoRaTxTimeout() as integer
     str$ = "\nLoRa TX Timeout"
     PrintMsg(str$)
 endfunc 1
 
-'//==============================================================================
-'// This handler is called when there is a LoRa Rx Timeout event
-'//==============================================================================
+//==============================================================================
+// This handler is called when there is a LoRa Rx Timeout event
+//==============================================================================
 function HandlerLoRaRxTimeout() as integer
     str$ = "\nLoRa RX Timeout"
     PrintMsg(str$)
 endfunc 1
 
-'//==============================================================================
-'// This handler is called when there is an error in the receive path
-'//==============================================================================
+//==============================================================================
+// This handler is called when there is an error in the receive path
+//==============================================================================
 function HandlerLoRaRxError() as integer
     str$ = "\nLoRa RX Error"
     PrintMsg(str$)
@@ -441,6 +482,13 @@ endfunc 1
 function HandlerLoRaAdr() As Integer
     str$ = "\nAdr received"
     PrintMsg(str$)
+	
+	rc = LORAMACGetOption(LORAMAC_OPT_TX_POWER, str$)
+	print "\nLORAMAC_OPT_TX_POWER: ";str$;"\n"
+	rc = LORAMACGetOption(LORAMAC_OPT_DATA_RATE, str$)
+	print "LORAMAC_OPT_DATA_RATE: ";str$;"\n"
+	rc = LORAMACGetOption(LORAMAC_OPT_CHANNELMASK, str$)
+	print "LORAMAC_OPT_CHANNELMASK: ";str$;"\n"
 endfunc 1
 
 //==============================================================================
@@ -464,9 +512,9 @@ endfunc 1
 // Equivalent to main() in C
 //******************************************************************************
 
-//------------------------------------------------------------------------------
+//==============================================================================
 // Enable synchronous event handlers
-//------------------------------------------------------------------------------
+//==============================================================================
 OnEvent  EVUARTRX             call  HandlerUartRxCmd
 OnEvent  EVLORAMACTXCOMPLETE  call  HandlerLoRaTxComp
 OnEvent  EVLORAMACRXCOMPLETE  call  HandlerLoRaRxComp
@@ -484,32 +532,26 @@ OnEvent  EVLORAMACNEXTTX      call HandlerNextTx
 OnEvent  EVTMR0               call  LoraPost         
 OnEvent  EVGPIOCHAN0          call  Button2Pressed
 
-//------------------------------------------------------------------------------
-// Initialise Services and then wait for events
-//------------------------------------------------------------------------------
-
 //==============================================================================
+// Initialise GPIO and SPI for temperature sensor, Button1, Button2, LED5 
+// and join LoRa network
 //==============================================================================
 sub Initialise()
     dim wr$
     
     //Set the temperature sensor up with 1/3 scaling
     rc = GpioSetFunc(TEMP_SENS_PIN, 3, 0x13)
-
-    //Automatically join the LoRa network if set
-    if (AUTO_JOIN == 1) then
-        rc = LORAMACJoin(JOIN_TYPE)
-    endif
-
-    //Setting for Button1
+	
+	//Setting for Button1
     rc=GpioSetFunc(SPI_CS_PIN, 2, 1)
     GpioWrite(SPI_CS_PIN, 1)
     rc=SpiOpen(0, 125000, 0, SPIHandle)
-    wr$="\40\00\10"
+    //Configure Button1 as output by writing(opcode 0x40) 0x10 to register 0x00 
+	wr$="\40\00\10"
     GpioWrite(SPI_CS_PIN, 0)
     rc=SpiWrite(wr$)
     GpioWrite(SPI_CS_PIN, 1)
-    // Enable a weak pull-up on the push button (GPPU 0x06)
+    // Enable a weak pull-up on the button1 (GPPU 0x06)
     wr$="\40\06\10"
     GpioWrite(SPI_CS_PIN, 0)
     rc=SpiWrite(wr$)
@@ -520,20 +562,18 @@ sub Initialise()
     //Setting BUTTON2 as Digial_IN with weak pull-up
     rc = gpiosetfunc(BUTTON2,1,2)
     //Link Button2 to LED5
-    rc = GpioBindEvent(0, BUTTON2 ,1)   //Binds a gpio transition high to an event. 
+    rc = GpioBindEvent(0, BUTTON2 ,1)   //Binds a gpio transition high to an event.
+	
+	//Automatically join the LoRa network if set
+    if (AUTO_JOIN == 1) then
+        rc = LORAMACJoin(JOIN_TYPE)
+    endif
 endsub
 
-//------------------------------------------------------------------------------
-//------------------------------------------------------------------------------
 Initialise()
 
 //Send an OK response
 UartRsp(0)
 
-// rc = LORAMACSetDebug(1,4,5)
-
-//------------------------------------------------------------------------------
-// Wait for a synchronous event.
-// An application can have multiple <WaitEvent> statements
-//------------------------------------------------------------------------------
+//Wait for a synchronous event.
 WaitEvent
