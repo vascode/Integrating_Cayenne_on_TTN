@@ -57,19 +57,22 @@
 #define NUM_OF_S_PARAMS                     (4)
 
     //Button1 : SIO4 is connected to the CS line via J18
-#define SPI_CS_PIN  	4
+#define SPI_CS_PIN      4
 
     //SIO5 is connected to the temperature sensor
-#define TEMP_SENS_PIN 	5
+#define TEMP_SENS_PIN   5
     
-    //SIO28 is connected to Button2 with a jumper on DVK	
-#define BUTTON2 		28
+    //SIO28 is connected to Button2 with a jumper on DVK    
+#define BUTTON2         28
 
     //SIO6 is connected to LED5
-#define LED5 			6
+#define LED5            6
 
-    //Set to 1 to automatically join the LoRa network at startup
-#define AUTO_JOIN 		1
+    //Set to 1 to automatically join the LoRa network at startup. Set 0 to disable it
+#define AUTO_JOIN       1
+
+    //OTAA. To use ABP, replace the value with LORAMAC_JOIN_BY_PERSONALIZATION or 0
+#define JOIN_TYPE       LORAMAC_JOIN_BY_REQUEST
 
 //******************************************************************************
 // Register Error Handler as early as possible
@@ -134,10 +137,10 @@ dim urts                    //will be <0 if uart parser suspended
 
 dim SPIHandle
 
-dim led : led = 0			//led status
-				
-    //OTAA. To use ABP, replace the value with LORAMAC_JOIN_BY_PERSONALIZATION
-dim nJoinType : nJoinType = LORAMAC_JOIN_BY_REQUEST		
+dim led : led = 0           //led status
+
+dim okToTx : okToTx = 1     //change to 0 at data Tx and 1 at EVLORAMACNEXTTX   
+    
 //******************************************************************************
 // initialize Global Variable
 //******************************************************************************
@@ -205,38 +208,51 @@ function ReadBtnState()
 endfunc ((rc&0x10)==0)
 
 function LoraPost()
-    print "LoraPost()"
-    dim tempType$, tempVal$,txData$, powerVal$, bttn1State$, led5State$
-    dim atm 
-	
-	// 	LPP (Low Power Payload) for Cayenne - first byte is data channel and second byte is data type 
-    tempType$="\01\67"		// "\67" : Temperature 
-    atm = ReadTemp()
-    EndianSwap(atm)
+    if (okToTx == 1) then 
+        dim tempType$, tempVal$,txData$, powerVal$, bttn1State$, led5State$
+        dim atm, theoreticalMax, actualMax
+        
+        //  LPP (Low Power Payload) for Cayenne - first byte is data channel and second byte is data type 
+        tempType$="\01\67"    // "\67" : Temperature 
+        atm = ReadTemp()
+        EndianSwap(atm)
+        rc=bleencode16(tempVal$,atm,0)
 
-    rc=bleencode16(tempVal$,atm,0)
+        powerVal$ = "\02\02"    // "\02" : Analog input
+        atm = ReadPwrSupplyMv()/10
+        EndianSwap(atm)
+        rc=bleencode16(powerVal$,atm,2)
+     
+        atm = ReadBtnState()
+        bttn1State$ = "\03\00"    // "\00" : Digital input 
+        rc=bleencode8(bttn1State$,atm,2)
 
-    powerVal$ = "\02\02"	// "\02" : Analog input
-    atm = ReadPwrSupplyMv()/10
-    EndianSwap(atm)
-    rc=bleencode16(powerVal$,atm,2)
- 
-    atm = ReadBtnState()
-    bttn1State$ = "\03\00"	// "\00" : Digital input 
-    rc=bleencode8(bttn1State$,atm,2)
-
-    led5State$ = "\04\01"	// "\01" : Digital output
-	
-    if (led == 0) then	
-        rc=strsetchr(led5State$,0,2)
-    else 
-        rc=strsetchr(led5State$,1,2)
+        led5State$ = "\04\01"    // "\01" : Digital output
+        
+        if (led == 0) then  
+            rc=strsetchr(led5State$,0,2)
+        else 
+            rc=strsetchr(led5State$,1,2)
+        endif
+        
+        txData$ = tempType$ + tempVal$ + powerVal$ + bttn1State$ + led5State$
+        
+        //Check the size of data is within maximum payload size 
+        rc = LoramacQueryTxPossible(strlen(txData$), theoreticalMax, actualMax)
+        if (rc == 0) then
+            rc = LORAMACTxData(1, txData$, 1)
+        else
+            print "\nData payload is too large"
+            print "\nTheoretical max payload at current datarate : ";theoreticalMax;
+            print "\nActual max payload : ";actualMax;
+            print "\nCurrent data size : ";strlen(txData$)
+        endif
+    else
+        str$ = "\nThere is no available duty cycle"
+        PrintMsg(str$)
+    okToTx = 0  //Need to wait for EVLORAMACNEXTTX to be 1 
     endif
-	
-	txData$ = tempType$ + tempVal$ + powerVal$ + bttn1State$ + led5State$
-	print "\ntxData$: ";txData$ 
-	
-    rc = LORAMACTxData(1, txData$, 1)
+    
 endfunc 1
 
 //-------------------------------------------------------------------------
@@ -261,42 +277,7 @@ function _Lora()
         rc = ExtractIntTokens(urtcmd$,1,2)
         exitfunc LORAMACTxData(i[1], tkn$, i[2])
     elseif strcmp(tkn$,"post")==0 then
-        exitfunc LoraPost()
-		// print "LoraPost()"
-    // dim tempType$, tempVal$,txData$, powerVal$, bttn1State$, led5State$
-    // dim atm 
-	
-	// // 	LPP (Low Power Payload) for Cayenne - first byte is data channel and second byte is data type 
-    // tempType$="\01\67"		// "\67" : Temperature 
-    // atm = ReadTemp()
-    // EndianSwap(atm)
-
-    // rc=bleencode16(tempVal$,atm,0)
-
-    // powerVal$ = "\02\02"	// "\02" : Analog input
-    // atm = ReadPwrSupplyMv()/10
-    // EndianSwap(atm)
-    // rc=bleencode16(powerVal$,atm,2)
- 
-    // atm = ReadBtnState()
-    // bttn1State$ = "\03\00"	// "\00" : Digital input 
-    // rc=bleencode8(bttn1State$,atm,2)
-
-    // led5State$ = "\04\01"	// "\01" : Digital output
-	
-    // if (led == 0) then	
-        // rc=strsetchr(led5State$,0,2)
-    // else 
-        // rc=strsetchr(led5State$,1,2)
-    // endif
-	
-	// txData$ = tempType$ + tempVal$ + powerVal$ + bttn1State$ + led5State$
-	// print "\ntxData$: ";txData$ 
-
-    // exitfunc LORAMACTxData(1, txData$, 1)
-
-
-		
+        exitfunc LoraPost()     
     elseif strcmp(tkn$,"get")==0 then
         rc = ExtractIntToken(urtcmd$,reg)
         rc = LORAMACGetOption(reg, stringVal$)
@@ -362,6 +343,13 @@ function HandlerUartRxCmd() as integer
     endif
 endfunc 1
 
+//==============================================================================
+// This handler is called when there is availale duty cycle on one of sub-band to send data  
+//==============================================================================
+FUNCTION HandlerNextTx() As Integer
+    okToTx = 1
+endfunc 1
+
 '//==============================================================================
 '// This handler is called when there is a LoRa TX Complete event
 '//==============================================================================
@@ -388,12 +376,12 @@ endfunc 1
 '//==============================================================================
 function HandlerLoRaJoined() as integer
     print "\nSuccessfully joined the LoRa network"
-	
-	//Change data rate to DR4 to allow bigger payload
-	dim wr$ : wr$ = "4"
+    
+    //Change data rate to DR4 to allow bigger payload
+    dim wr$ : wr$ = "4"
     rc = LORAMACSetOption(LORAMAC_OPT_DATA_RATE, wr$)
     
-	if (AUTO_JOIN == 1) then	
+    if (AUTO_JOIN == 1) then    
         print "\nNow RM1xx will send data to Cayenne periodically"
         TimerStart(0, 10000, 1)
     endif
@@ -403,28 +391,32 @@ endfunc 1
 '// This handler is called when there is a LoRa Join Fail event
 '//==============================================================================
 function HandlerLoRaJoinFailed() as integer
-    print "\nFailed to join the LoRa network"
+    str$ = "\nFailed to join the LoRa network"
+    PrintMsg(str$)
 endfunc 1
 
 '//==============================================================================
 '// This handler is called when there is a LoRa Tx Timeout event 
 '//==============================================================================
 function HandlerLoRaTxTimeout() as integer
-    print "\nLoRa TX Timeout"
+    str$ = "\nLoRa TX Timeout"
+    PrintMsg(str$)
 endfunc 1
 
 '//==============================================================================
 '// This handler is called when there is a LoRa Rx Timeout event
 '//==============================================================================
 function HandlerLoRaRxTimeout() as integer
-    print "\nLoRa RX Timeout"
+    str$ = "\nLoRa RX Timeout"
+    PrintMsg(str$)
 endfunc 1
 
 '//==============================================================================
 '// This handler is called when there is an error in the receive path
 '//==============================================================================
 function HandlerLoRaRxError() as integer
-    print "\nLoRa RX Error"
+    str$ = "\nLoRa RX Error"
+    PrintMsg(str$)
 endfunc 1
 
 //==============================================================================
@@ -455,15 +447,17 @@ endfunc 1
 // This handler is called when Button2 is pressed
 //==============================================================================
 function Button2Pressed()
-    if (led == 0) then	
-        gpiowrite(LED5,1)	//Turns LED5 on		
+    if (led == 0) then  
+        gpiowrite(LED5,1)   //Turns LED5 on     
         led = 1
-        print "\nButton2 pressed - LED5 turned on\n"
-    else 	
-        gpiowrite(LED5,0)	//Turns LED5 off
+        str$ = "\nButton2 pressed - LED5 turned on\n"
+        PrintMsg(str$)
+    else    
+        gpiowrite(LED5,0)   //Turns LED5 off
         led = 0
-        print "\nButton2 pressed - LED5 turned off\n"
-    endif	
+        str$ = "\nButton2 pressed - LED5 turned off\n"
+        PrintMsg(str$)
+    endif   
 endfunc 1
 
 //******************************************************************************
@@ -478,16 +472,17 @@ OnEvent  EVLORAMACTXCOMPLETE  call  HandlerLoRaTxComp
 OnEvent  EVLORAMACRXCOMPLETE  call  HandlerLoRaRxComp
 OnEvent  EVLORAMACJOINING     call  HandlerLoRaJoining
 OnEvent  EVLORAMACJOINED      call  HandlerLoRaJoined
-// OnEvent  EVLORAMACJOINFAIL  call  HandlerLoRaJoinFailed
+OnEvent  EVLORAMACJOINFAIL    call  HandlerLoRaJoinFailed
 OnEvent  EVLORAMACTXTIMEOUT   call  HandlerLoRaTxTimeout
 OnEvent  EVLORAMACRXTIMEOUT   call  HandlerLoRaRxTimeout
 OnEvent  EVLORAMACRXERROR     call  HandlerLoRaRxError
 OnEvent  EVLORAMACTXDONE      call  HandlerLoRaTxDone
 OnEvent  EVLORAMACNOSYNC      call  HandlerLoRaNoSync
 OnEvent  EVLORAMACADR         call  HandlerLoRaAdr
+OnEvent  EVLORAMACNEXTTX      call HandlerNextTx
 
-OnEvent  EVTMR0 			  call	LoraPost		 
-OnEvent  EVGPIOCHAN0 		  call  Button2Pressed
+OnEvent  EVTMR0               call  LoraPost         
+OnEvent  EVGPIOCHAN0          call  Button2Pressed
 
 //------------------------------------------------------------------------------
 // Initialise Services and then wait for events
@@ -496,14 +491,14 @@ OnEvent  EVGPIOCHAN0 		  call  Button2Pressed
 //==============================================================================
 //==============================================================================
 sub Initialise()
+    dim wr$
+    
     //Set the temperature sensor up with 1/3 scaling
     rc = GpioSetFunc(TEMP_SENS_PIN, 3, 0x13)
 
-    dim wr$ : wr$ = "4"
-
     //Automatically join the LoRa network if set
     if (AUTO_JOIN == 1) then
-        rc = LORAMACJoin(nJoinType)
+        rc = LORAMACJoin(JOIN_TYPE)
     endif
 
     //Setting for Button1
@@ -519,13 +514,13 @@ sub Initialise()
     GpioWrite(SPI_CS_PIN, 0)
     rc=SpiWrite(wr$)
     GpioWrite(SPI_CS_PIN, 1)
-	
+    
     //Set LED5 as GIDITAL_OUT with initial output low
     rc = gpiosetfunc(LED5,2,0)
     //Setting BUTTON2 as Digial_IN with weak pull-up
     rc = gpiosetfunc(BUTTON2,1,2)
     //Link Button2 to LED5
-    rc = GpioBindEvent(0, BUTTON2 ,1)	//Binds a gpio transition high to an event. 
+    rc = GpioBindEvent(0, BUTTON2 ,1)   //Binds a gpio transition high to an event. 
 endsub
 
 //------------------------------------------------------------------------------
@@ -535,7 +530,7 @@ Initialise()
 //Send an OK response
 UartRsp(0)
 
-rc = LORAMACSetDebug(1,4,5)
+// rc = LORAMACSetDebug(1,4,5)
 
 //------------------------------------------------------------------------------
 // Wait for a synchronous event.

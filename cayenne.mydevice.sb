@@ -434,7 +434,7 @@ OnEvent  EVLORAMACTXCOMPLETE  call  HandlerLoRaTxComp
 OnEvent  EVLORAMACRXCOMPLETE  call  HandlerLoRaRxComp
 OnEvent  EVLORAMACJOINING     call  HandlerLoRaJoining
 OnEvent  EVLORAMACJOINED      call  HandlerLoRaJoined
-OnEvent  EVLORAMACJOINFAILED  call  HandlerLoRaJoinFailed
+// OnEvent  EVLORAMACJOINFAILED  call  HandlerLoRaJoinFailed
 OnEvent  EVLORAMACTXTIMEOUT   call  HandlerLoRaTxTimeout
 OnEvent  EVLORAMACRXTIMEOUT   call  HandlerLoRaRxTimeout
 OnEvent  EVLORAMACRXERROR     call  HandlerLoRaRxError

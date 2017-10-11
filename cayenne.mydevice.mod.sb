@@ -48,28 +48,34 @@
 //******************************************************************************
 #include "RM1xx-defs.h"
 
-        //Set this to 0 to disable all debugging messages
+    //Set this to 0 to disable all debugging messages
 #define ENABLE_DEBUG_PRINTS                  1
+    //Size of i[]
 
-        //Size of i[]
 #define NUM_OF_I_PARAMS                     (4)
-        //Size of s$[] and must be at least 8 elements for BleSvcRegDevInfo()     
+    //Size of s$[]     
 #define NUM_OF_S_PARAMS                     (4)
 
-        //SIO4 is connected to the CS line via J18
-#define SPI_CS_PIN  4
+    //Button1 : SIO4 is connected to the CS line via J18
+#define SPI_CS_PIN  	4
 
-        //SIO5 is connected to the temperature sensor
-#define TEMP_SENS_PIN 5
+    //SIO5 is connected to the temperature sensor
+#define TEMP_SENS_PIN 	5
+    
+    //SIO28 is connected to Button2 with a jumper on DVK	
+#define BUTTON2 		28
 
-        //Set to 1 to automatically join the LoRa network at startup
-#define AUTO_JOIN 1
+    //SIO6 is connected to LED5
+#define LED5 			6
+
+    //Set to 1 to automatically join the LoRa network at startup
+#define AUTO_JOIN 		1
 
 //******************************************************************************
 // Register Error Handler as early as possible
 //******************************************************************************
 sub HandlerOnErr()
-  print "\n OnErr - ";GetLastError();"\n"
+    print "\n OnErr - ";GetLastError();"\n"
 endsub
 onerror next HandlerOnErr
 
@@ -80,25 +86,25 @@ onerror next HandlerOnErr
 //==============================================================================
 //==============================================================================
 sub AssertResCode(byval rc as integer,byval tag as integer)
-  if rc!=0 then
-    print "\nFailed with ";integer.h' rc;" at tag ";tag
-  endif
+    if rc!=0 then
+        print "\nFailed with ";integer.h' rc;" at tag ";tag
+    endif
 endsub
 
 //==============================================================================
 //==============================================================================
 sub DbgMsgVal(byval msg$ as string, byval vl as integer)
-  if (ENABLE_DEBUG_PRINTS!=0) then
-    print "\n";msg$;" ";vl
-  endif
+    if (ENABLE_DEBUG_PRINTS!=0) then
+        print "\n";msg$;" ";vl
+    endif
 endsub
 
 //==============================================================================
 //==============================================================================
 sub DbgMsg(byval msg$ as string)
-  if (ENABLE_DEBUG_PRINTS!=0) then
-    print "\n";msg$
-  endif
+    if (ENABLE_DEBUG_PRINTS!=0) then
+        print "\n";msg$
+    endif
 endsub
 
 //******************************************************************************
@@ -121,7 +127,7 @@ dim str$
 dim ok$,er$,pr$
 
 dim i[NUM_OF_I_PARAMS]      // index 0 used for return values
-dim s$[NUM_OF_S_PARAMS]    // must be at least 8 elements for BleSvcRegDevInfo()
+dim s$[NUM_OF_S_PARAMS]    // values stored in NVRAM (AppEUI and DevAddr) are stored here
 
 dim urtcmd$                 //cmd line from uart
 dim tkn$,tlen               //used by command parser
@@ -130,8 +136,9 @@ dim urts                    //will be <0 if uart parser suspended
 dim LEDVAL$ : LEDVAL$ = "\00"
 dim SPIHandle
 
+dim led : led = 0			//led status
 //******************************************************************************
-// Initialisse Global Variable
+// initialize Global Variable
 //******************************************************************************
 
 ok$    = "\nOK"
@@ -147,35 +154,33 @@ SUB PrintMsg(str$)
     rc = UartWrite(str$)
 ENDSUB
 
-
 //==============================================================================
 sub UartRsp(rsp as integer)
-  if rsp == 0 then
-    print ok$;pr$
-  elseif rsp > 0 then 
-    print er$;integer.h' rsp;pr$
-  endif
-  urts = rsp
+    if rsp == 0 then
+        print ok$;pr$
+    elseif rsp > 0 then 
+        print er$;integer.h' rsp;pr$
+    endif
+    urts = rsp
 endsub
 
 //-------------------------------------------------------------------------
 //-------------------------------------------------------------------------
 function ExtractIntTokens(u$,stIdx,num)
-  while num>0
-    tlen = ExtractIntToken(u$,i[stIdx])
-    if tlen == 0 then
-      exitfunc 4
-    endif
-    num=num-1
-    stIdx = stIdx+1
-  endwhile
+    while num>0
+        tlen = ExtractIntToken(u$,i[stIdx])
+        if tlen == 0 then
+            exitfunc 4
+        endif
+        num=num-1
+        stIdx = stIdx+1
+    endwhile
 endfunc 0
 
 //-------------------------------------------------------------------------
 //-------------------------------------------------------------------------
 function ReadTemp()
     dim tempC : tempC = GpioRead(TEMP_SENS_PIN)
-	print "tempC: ";tempC
     tempC = ((19028992-36000*tempC)/11971)
 endfunc tempC
 
@@ -198,15 +203,42 @@ function ReadBtnState()
     // Check if IO4 is grounded
 endfunc ((rc&0x10)==0)
 
+function LoraPost()
+    dim hConn,hAttr,att$,dscd,lpp$,tx$,t$
+    lpp$="\01\67"
+    dim atm
+    atm = ReadTemp()
+    EndianSwap(atm)
+
+    rc=bleencode16(att$,atm,0)
+
+    dim tst2$
+    tst2$ = "\02\02"
+    atm = ReadPwrSupplyMv()/10
+    EndianSwap(atm)
+    rc=bleencode16(tst2$,atm,2)
+
+    dim tst3$
+    atm = ReadBtnState()
+    tst3$ = "\03\00"
+    rc=bleencode8(tst3$,atm,2)
+
+    dim tst4$
+    tst4$ = "\04\01"
+	
+    if (led == 0) then	
+        LEDVAL$ =  "\00"		
+    else 
+        LEDVAL$ =  "\01"
+    endif
+	
+    tx$=lpp$+att$ + tst2$ + tst3$ + tst4$ + LEDVAL$
+    rc = LORAMACTxData(1, tx$, 1)
+endfunc 1
+
 //-------------------------------------------------------------------------
-//#CMD#// lora update param$   #INTvalue# 
-//#CMD#// lora readparam  param$  #INTvalue# 
-//#CMD#// lora readreg  #INTreg#  #INTvalue# 
-//#CMD#// lora pollregs 
-//#CMD#// lora tx 
-//#CMD#// lora txpkts1 #INTfrequencyChannel# #INTDataRate# #INTPowerBand # #INThandle#
-//#CMD#// lora cancel #INThandle#
 //-------------------------------------------------------------------------
+
 function _Lora()
     dim prAdr$ 
     dim val
@@ -226,40 +258,7 @@ function _Lora()
         rc = ExtractIntTokens(urtcmd$,1,2)
         exitfunc LORAMACTxData(i[1], tkn$, i[2])
     elseif strcmp(tkn$,"post")==0 then
-        dim hConn,hAttr,att$,dscd,lpp$,tx$,t$
-        lpp$="\01\67"
-        dim atm
-        atm = ReadTemp()
-        print "atm = ";atm;"\r\n"
-        EndianSwap(atm)
-
-        rc=bleencode16(att$,atm,0)
-        print "att$ = ";att$;"\r\n"
-
-        dim tst2$
-        tst2$ = "\02\02"
-        atm = ReadPwrSupplyMv()/10
-        EndianSwap(atm)
-        rc=bleencode16(tst2$,atm,2)
-
-        dim tst3$
-        atm = ReadBtnState()
-        tst3$ = "\03\00"
-        rc=bleencode8(tst3$,atm,2)
-
-        dim tst4$
-        tst4$ = "\04\01"
-
-        tx$=lpp$+att$ + tst2$ + tst3$ + tst4$ + LEDVAL$
-        exitfunc LORAMACTxData(1, tx$, 0)
-    elseif strcmp(tkn$,"doze")==0 then
-        rc = LORAMACSleepMode()
-        UartClose()
-        WAITEVENT
-        exitfunc 0
-    elseif strcmp(tkn$,"reset")==0 then
-        rc = LORAMACReset()
-        exitfunc 0
+        exitfunc LoraPost()		
     elseif strcmp(tkn$,"get")==0 then
         rc = ExtractIntToken(urtcmd$,reg)
         rc = LORAMACGetOption(reg, stringVal$)
@@ -352,60 +351,42 @@ endfunc 1
 '//==============================================================================
 function HandlerLoRaJoined() as integer
     print "\nSuccessfully joined the LoRa network"
+    if (AUTO_JOIN == 1) then	
+        print "\nNow RM1xx will send data to Cayenne periodically"
+        timerstart(0, 10000, 1)
+    endif
 endfunc 1
 
+'//==============================================================================
+'// This handler is called when there is a LoRa Join Fail event
+'//==============================================================================
 function HandlerLoRaJoinFailed() as integer
     print "\nFailed to join the LoRa network"
 endfunc 1
+
+'//==============================================================================
+'// This handler is called when there is a LoRa Tx Timeout event 
+'//==============================================================================
 function HandlerLoRaTxTimeout() as integer
     print "\nLoRa TX Timeout"
 endfunc 1
+
+'//==============================================================================
+'// This handler is called when there is a LoRa Rx Timeout event
+'//==============================================================================
 function HandlerLoRaRxTimeout() as integer
     print "\nLoRa RX Timeout"
 endfunc 1
+
+'//==============================================================================
+'// This handler is called when there is an error in the receive path
+'//==============================================================================
 function HandlerLoRaRxError() as integer
     print "\nLoRa RX Error"
 endfunc 1
 
 //==============================================================================
-// This handler is called when downlink data is received from the gateway
-//==============================================================================
-// function HandlerLoRaRxData() as integer
-    // dim data$
-    // dim nRSSI,nPort,nSNR
-    
-    // rc = LORAMACRxData(data$, nRSSI, nPort, nSNR)    
-    // print "\nLoRa Received downstream data on port ";nPort;"\nRSSI: ";nRSSI;"   SNR: ";nSNR;"\n";data$;""
-    // dim wr$
-    // if (strcmp(data$, "\04\00\00\FF") == 0) then
-        // //Disable LED
-        // GpioWrite(SPI_CS_PIN,0)
-        // // Write (opcode 0x40) PORT/GPIO Register (0x09)
-        // wr$="\40\09"
-        // // Add the value that was passed in to the SPI command
-        // rc=strsetchr(wr$,0,2)
-        // rc=SpiWrite(wr$)
-        // GpioWrite(SPI_CS_PIN,1)
-        // LEDVAL$ = "\00"
-        // wr$ = "\04\01\00"
-        // rc = LORAMACTxData(1, wr$, 0)
-    // elseif (strcmp(data$, "\04\00\64\FF") == 0) then
-        // //Enable LED
-        // GpioWrite(SPI_CS_PIN,0)
-        // // Write (opcode 0x40) PORT/GPIO Register (0x09)
-        // wr$="\40\09"
-        // // Add the value that was passed in to the SPI command
-        // rc=strsetchr(wr$,1,2)
-        // rc=SpiWrite(wr$)
-        // GpioWrite(SPI_CS_PIN,1)
-        // LEDVAL$ = "\64"
-        // wr$ = "\04\01\64"
-        // rc = LORAMACTxData(1, wr$, 0)
-    // endif
-// endfunc 1
-
-//==============================================================================
-// This handler is called when Teh TxDone signal has been recevied in the module
+// This handler is called when the TxDone signal has been received in the module
 //==============================================================================
 function HandlerLoRaTxDone() As Integer
     str$ = "\nTx Done"
@@ -413,7 +394,7 @@ function HandlerLoRaTxDone() As Integer
 endfunc 1
 
 //==============================================================================
-// This handler is called when an RxWindow has faied to revceive a sync pulse
+// This handler is called an RxWindow has faied to revceive a sync pulse
 //==============================================================================
 function HandlerLoRaNoSync() As Integer
     str$ = "\nNo Sync pulse"
@@ -429,12 +410,19 @@ function HandlerLoRaAdr() As Integer
 endfunc 1
 
 //==============================================================================
-//handler to service button 0 pressed
+// handler for button2 press -> toggle LED5
 //==============================================================================
-FUNCTION HndlrBtn1Pr() AS INTEGER
-    print "\nbutton 1 pressed"
-    //just exit and stop waiting for events
-ENDFUNC 0
+function Button2Pressed()
+    if (led == 0) then	        
+        gpiowrite(LED5,1)	//Turns LED5 on		
+        led = 1
+        print "\nButton2 pressed - LED5 turned on\n"
+    else 	
+        gpiowrite(LED5,0)	//Turns LED5 off
+        led = 0
+        print "\nButton2 pressed - LED5 turned off\n"
+    endif	
+endfunc 1
 
 //******************************************************************************
 // Equivalent to main() in C
@@ -448,14 +436,16 @@ OnEvent  EVLORAMACTXCOMPLETE  call  HandlerLoRaTxComp
 OnEvent  EVLORAMACRXCOMPLETE  call  HandlerLoRaRxComp
 OnEvent  EVLORAMACJOINING     call  HandlerLoRaJoining
 OnEvent  EVLORAMACJOINED      call  HandlerLoRaJoined
-// OnEvent  EVLORAMACJOINFAILED  call  HandlerLoRaJoinFailed
+OnEvent  EVLORAMACJOINFAILED  call  HandlerLoRaJoinFailed
 OnEvent  EVLORAMACTXTIMEOUT   call  HandlerLoRaTxTimeout
 OnEvent  EVLORAMACRXTIMEOUT   call  HandlerLoRaRxTimeout
 OnEvent  EVLORAMACRXERROR     call  HandlerLoRaRxError
-// OnEvent  EVLORAMACRXDATA      call  HandlerLoRaRxData
 OnEvent  EVLORAMACTXDONE      call  HandlerLoRaTxDone
 OnEvent  EVLORAMACNOSYNC      call  HandlerLoRaNoSync
-// OnEvent  EVLORAMACADR         call  HandlerLoRaAdr
+OnEvent  EVLORAMACADR         call  HandlerLoRaAdr
+
+OnEvent  EVTMR0 			  call	LoraPost		 
+OnEvent  EVGPIOCHAN0 		  call  Button2Pressed         //Detects when button 0 is released and calls the function
 
 //------------------------------------------------------------------------------
 // Initialise Services and then wait for events
@@ -467,10 +457,8 @@ sub Initialise()
     //Set the temperature sensor up with 1/3 scaling
     rc = GpioSetFunc(TEMP_SENS_PIN, 3, 0x13)
 
-	dim wr$ : wr$ = "4"
+    dim wr$ : wr$ = "4"
     rc = LORAMACSetOption(LORAMAC_OPT_DATA_RATE, wr$)
-    
-    print "rc = ";rc;"\r\n"
 
     //Automatically join the LoRa network if set
     if (AUTO_JOIN == 1) then
@@ -488,7 +476,7 @@ sub Initialise()
         endif
     endif
 
-    //
+    //Setting for Button1 
     rc=GpioSetFunc(SPI_CS_PIN, 2, 1)
     GpioWrite(SPI_CS_PIN, 1)
     rc=SpiOpen(0, 125000, 0, SPIHandle)
@@ -501,6 +489,13 @@ sub Initialise()
     GpioWrite(SPI_CS_PIN, 0)
     rc=SpiWrite(wr$)
     GpioWrite(SPI_CS_PIN, 1)
+	
+    //Set LED5 as GIDITAL_OUT with initial output low
+    rc = gpiosetfunc(LED5,2,0)
+    //Setting BUTTON2 as Digial_IN with weak pull-up
+    rc = gpiosetfunc(BUTTON2,1,2)
+    //Link Button1 to LED5
+    rc = GpioBindEvent(0, BUTTON2 ,1)	//Binds a gpio transition high to an event. 
 endsub
 
 //------------------------------------------------------------------------------
