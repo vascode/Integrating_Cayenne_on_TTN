@@ -275,13 +275,21 @@ function LoraPost()
 			//Current data rate can handle the outbound data size 
             rc = LORAMACTxData(1, txData$, 1)
         else
-            print "\nData payload is too large"
-            print "\nTheoretical max payload at current datarate : ";theoreticalMax;
-            print "\nActual max payload : ";actualMax;
-            print "\nCurrent data size : ";strlen(txData$)
-			print "\nSwitching to DR4 to allow higher max payload"
-			dim wr$ : wr$ = "4"
-			rc = LORAMACSetOption(LORAMAC_OPT_DATA_RATE, wr$)
+            print "\nData payload is too large for current data rate"
+            print "\n	Theoretical max payload at current datarate : ";theoreticalMax;
+            print "\n	Actual max payload : ";actualMax;
+            print "\n	Current data size : ";strlen(txData$)
+			
+			//Increase data rate by one
+			rc = LORAMACGetOption(LORAMAC_OPT_DATA_RATE, str$)
+			dim dr : dr = StrValDec(str$)
+			if (dr <= 4) then
+				dr = dr + 1
+				sprint #str$, dr
+				print "\nRaising data rate to DR";dr;" for higher max payload\n"			
+			endif
+			
+			rc = LORAMACSetOption(LORAMAC_OPT_DATA_RATE, str$)
         endif
     else
         str$ = "\nThere is no available duty cycle"
@@ -418,9 +426,9 @@ endfunc 1
 function HandlerLoRaJoined() as integer
     print "\nSuccessfully joined the LoRa network"
     
-    //Change data rate to DR4 to allow bigger payload
-    dim wr$ : wr$ = "4"
-    rc = LORAMACSetOption(LORAMAC_OPT_DATA_RATE, wr$)
+    //Change data rate to DR2 to allow bigger payload
+	str$ = "2"
+    rc = LORAMACSetOption(LORAMAC_OPT_DATA_RATE, str$)
     
     if (AUTO_JOIN == 1) then    
         print "\nNow RM1xx will send data to Cayenne periodically"
@@ -480,7 +488,7 @@ endfunc 1
 // This handler is called when An ADR command has been receive as part of a downlink.
 //==============================================================================
 function HandlerLoRaAdr() As Integer
-    str$ = "\nAdr received"
+    str$ = "\n\nADR received"
     PrintMsg(str$)
 	
 	rc = LORAMACGetOption(LORAMAC_OPT_TX_POWER, str$)
@@ -488,7 +496,7 @@ function HandlerLoRaAdr() As Integer
 	rc = LORAMACGetOption(LORAMAC_OPT_DATA_RATE, str$)
 	print "LORAMAC_OPT_DATA_RATE: ";str$;"\n"
 	rc = LORAMACGetOption(LORAMAC_OPT_CHANNELMASK, str$)
-	print "LORAMAC_OPT_CHANNELMASK: ";str$;"\n"
+	print "LORAMAC_OPT_CHANNELMASK: ";str$;
 endfunc 1
 
 //==============================================================================
@@ -531,9 +539,9 @@ OnEvent  EVLORAMACNEXTTX      call HandlerNextTx
 
 OnEvent  EVTMR0               call  LoraPost         
 OnEvent  EVGPIOCHAN0          call  Button2Pressed
-
+ 
 //==============================================================================
-// Initialise GPIO and SPI for temperature sensor, Button1, Button2, LED5 
+// Set up GPIO and SPI for temperature sensor, Button1, Button2, LED5 
 // and join LoRa network
 //==============================================================================
 sub Initialise()
@@ -562,7 +570,9 @@ sub Initialise()
     //Setting BUTTON2 as Digial_IN with weak pull-up
     rc = gpiosetfunc(BUTTON2,1,2)
     //Link Button2 to LED5
-    rc = GpioBindEvent(0, BUTTON2 ,1)   //Binds a gpio transition high to an event.
+    rc = GpioBindEvent(0, BUTTON2 , 1)   //Binds a gpio transition low to EVGPIOCHAN0.
+	
+	
 	
 	//Automatically join the LoRa network if set
     if (AUTO_JOIN == 1) then
