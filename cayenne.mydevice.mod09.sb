@@ -101,7 +101,7 @@
     //Set to 1 to automatically join the LoRa network at startup. Set 0 to disable it
 #define AUTO_JOIN       1
 
-    //OTAA. To use ABP, replace the value with LORAMAC_JOIN_BY_PERSONALIZATION or 0
+    //OTAA. To use ABP, set with LORAMAC_JOIN_BY_PERSONALIZATION or 0
 #define JOIN_TYPE       LORAMAC_JOIN_BY_REQUEST
 
 //******************************************************************************
@@ -276,9 +276,9 @@ function LoraPost()
             rc = LORAMACTxData(1, txData$, 1)
         else
             print "\nData payload is too large for current data rate"
-            print "\n	Theoretical max payload at current datarate : ";theoreticalMax;
-            print "\n	Actual max payload : ";actualMax;
-            print "\n	Current data size : ";strlen(txData$)
+            print "\n	Theoretical max payload at current data rate : ";theoreticalMax;
+            print "\n	Actual max payload at current data rate: ";actualMax;
+            print "\n	Size of data currently attempting to transmit: ";strlen(txData$)
 			
 			//Increase data rate by one
 			rc = LORAMACGetOption(LORAMAC_OPT_DATA_RATE, str$)
@@ -432,7 +432,7 @@ function HandlerLoRaJoined() as integer
     
     if (AUTO_JOIN == 1) then    
         print "\nNow RM1xx will send data to Cayenne periodically"
-        TimerStart(0, 10000, 1)
+        TimerStart(0, 30000, 1)
     endif
 endfunc 1
 
