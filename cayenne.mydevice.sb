@@ -283,8 +283,6 @@ function LoraPost()
         if (rc == 0) then
             //Current data rate can handle the outbound data size 
             rc = LORAMACTxData(1, txData$, 1)
-			okToTx = 0  //Will become 1 when EVLORAMACNEXTTX is triggered
-
         else
             print "\nData payload is too large for current data rate"
             print "\n   Theoretical max payload at current data rate : ";theoreticalMax;
@@ -305,6 +303,7 @@ function LoraPost()
     else
         str$ = "\nThere is no available duty cycle"
         PrintMsg(str$)
+		okToTx = 0  //Will become 1 when EVLORAMACNEXTTX is triggered
     endif
 endfunc 1
 
