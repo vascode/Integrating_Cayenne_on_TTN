@@ -44,13 +44,13 @@
 //  GPIO        0x09 
 //  OLAT        0x0A 
 //
-//	Read op-code : 0x41
-//	Write op-code : 0x40
+//  Read op-code : 0x41
+//  Write op-code : 0x40
 // 
 //  Configure Inputs/Outputs by writing 0x10 to register 0x00
 //  IO7  IO6  IO5 IO4  IO3  IO2  IO1  IO0   // MCP23S08 pin
 //  n/a  n/a  n/a BUTN LED4 LED3 LED2 LED1  // RM1xx DVK pin
-//   0    0    0   1    0    0    0    0    // 0=output 1=input	
+//   0    0    0   1    0    0    0    0    // 0=output 1=input 
 //
 // This app provides for a command interface over the uart and the protocol is
 // as follows:-
@@ -151,9 +151,9 @@ endsub
 
 dim rc
 dim stRsp$ as string        //Uart rx data is stored here
-dim str$					//Store data for string
+dim str$                    //Store data for string
 
-dim ok$,er$,pr$				//String for OK, ERROR and carriage return
+dim ok$,er$,pr$             //String for OK, ERROR and carriage return
 
 dim i[NUM_OF_I_PARAMS]      //Index 0 used for return values
 dim s$[NUM_OF_S_PARAMS]     //Values stored in NVRAM (AppEUI and DevAddr) are stored here
@@ -162,12 +162,12 @@ dim urtcmd$                 //Cmd line from uart
 dim tkn$,tlen               //Used by command parser
 dim urts                    //Will be <0 if uart parser suspended
 
-dim SPIHandle				//Handle for Microchip MCP23S08 SPI peripheral
+dim SPIHandle               //Handle for Microchip MCP23S08 SPI peripheral
 
 dim led : led = 0           //led status
 
 dim okToTx : okToTx = 1     //Available duty cycle on one of sub-band (only matters in EU & AS)
-							//Change to 0 at data Tx and 1 at EVLORAMACNEXTTX   
+                            //Change to 0 at data Tx and 1 at EVLORAMACNEXTTX   
     
 //******************************************************************************
 // initialize Global Variable
@@ -224,7 +224,7 @@ endsub
 //==============================================================================
 function ReadBtnState()
     dim wr$, rd$
-	//Read (opcode 0x41) PORT/GPIO Register (0x09)
+    //Read (opcode 0x41) PORT/GPIO Register (0x09)
     wr$="\41\09\00"
     GpioWrite(SPI_CS_PIN,0)
     rc=SpiReadWrite(wr$,rd$)
@@ -240,7 +240,7 @@ endfunc ((rc&0x10)==0)
 //==============================================================================
 function LoraPost()
     if (okToTx == 1) then 
-		//There is available duty cycle 
+        //There is available duty cycle 
         dim tempType$, tempVal$,txData$, powerVal$, bttn1State$, led5State$
         dim atm, theoreticalMax, actualMax
         
@@ -249,15 +249,23 @@ function LoraPost()
         atm = ReadTemp()
         EndianSwap(atm)
         rc=bleencode16(tempVal$,atm,0)
-
+		print "atm: ";INTEGER.H'atm;"\n"
+		print "tempVal$ : ";tempVal$;"\n"
+		
         powerVal$ = "\02\02"    // "\02" : Analog input
         atm = ReadPwrSupplyMv()/10
+		print "atm1: ";atm;"\n"
         EndianSwap(atm)
+		print "atm2: ";atm;"\n"
         rc=bleencode16(powerVal$,atm,2)
+		print "atm: ";INTEGER.H'atm;"\n"
+		print "powerVal$ : ";powerVal$;"\n"
      
         atm = ReadBtnState()
         bttn1State$ = "\03\00"    // "\00" : Digital input 
         rc=bleencode8(bttn1State$,atm,2)
+		print "atm: ";INTEGER.H'atm;"\n"
+		print "bttn1State$ : ";bttn1State$;"\n"
 
         led5State$ = "\04\01"    // "\01" : Digital output
         
@@ -268,33 +276,35 @@ function LoraPost()
         endif
         
         txData$ = tempType$ + tempVal$ + powerVal$ + bttn1State$ + led5State$
+		// print "Data for uplink : ";txData$;"\n"
         
         //Check the size of data is within maximum payload size 
         rc = LoramacQueryTxPossible(strlen(txData$), theoreticalMax, actualMax)
         if (rc == 0) then
-			//Current data rate can handle the outbound data size 
+            //Current data rate can handle the outbound data size 
             rc = LORAMACTxData(1, txData$, 1)
+			okToTx = 0  //Will become 1 when EVLORAMACNEXTTX is triggered
+
         else
             print "\nData payload is too large for current data rate"
-            print "\n	Theoretical max payload at current data rate : ";theoreticalMax;
-            print "\n	Actual max payload at current data rate: ";actualMax;
-            print "\n	Size of data currently attempting to transmit: ";strlen(txData$)
-			
-			//Increase data rate by one
-			rc = LORAMACGetOption(LORAMAC_OPT_DATA_RATE, str$)
-			dim dr : dr = StrValDec(str$)
-			if (dr <= 4) then
-				dr = dr + 1
-				sprint #str$, dr
-				print "\nRaising data rate to DR";dr;" for higher max payload\n"			
-			endif
-			
-			rc = LORAMACSetOption(LORAMAC_OPT_DATA_RATE, str$)
+            print "\n   Theoretical max payload at current data rate : ";theoreticalMax;
+            print "\n   Actual max payload at current data rate: ";actualMax;
+            print "\n   Size of data currently attempting to transmit: ";strlen(txData$)
+            
+            //Increase data rate by one
+            rc = LORAMACGetOption(LORAMAC_OPT_DATA_RATE, str$)
+            dim dr : dr = StrValDec(str$)
+            if (dr <= 4) then
+                dr = dr + 1
+                sprint #str$, dr
+                print "\nRaising data rate to DR";dr;" for higher max payload\n"            
+            endif
+            
+            rc = LORAMACSetOption(LORAMAC_OPT_DATA_RATE, str$)
         endif
     else
         str$ = "\nThere is no available duty cycle"
         PrintMsg(str$)
-		okToTx = 0  //Will become 1 when EVLORAMACNEXTTX is triggered
     endif
 endfunc 1
 
@@ -427,7 +437,7 @@ function HandlerLoRaJoined() as integer
     print "\nSuccessfully joined the LoRa network"
     
     //Change data rate to DR2 to allow bigger payload
-	str$ = "2"
+    str$ = "2"
     rc = LORAMACSetOption(LORAMAC_OPT_DATA_RATE, str$)
     
     if (AUTO_JOIN == 1) then    
@@ -487,16 +497,16 @@ endfunc 1
 //==============================================================================
 // This handler is called when An ADR command has been receive as part of a downlink.
 //==============================================================================
-function HandlerLoRaAdr() As Integer
+function HandlerLoRaAdr(PacketType, FramePending) As Integer
     str$ = "\n\nADR received"
     PrintMsg(str$)
-	
-	rc = LORAMACGetOption(LORAMAC_OPT_TX_POWER, str$)
-	print "\nLORAMAC_OPT_TX_POWER: ";str$;"\n"
-	rc = LORAMACGetOption(LORAMAC_OPT_DATA_RATE, str$)
-	print "LORAMAC_OPT_DATA_RATE: ";str$;"\n"
-	rc = LORAMACGetOption(LORAMAC_OPT_CHANNELMASK, str$)
-	print "LORAMAC_OPT_CHANNELMASK: ";str$;
+    
+    rc = LORAMACGetOption(LORAMAC_OPT_TX_POWER, str$)
+    print "\nLORAMAC_OPT_TX_POWER: ";str$;"\n"
+    rc = LORAMACGetOption(LORAMAC_OPT_DATA_RATE, str$)
+    print "LORAMAC_OPT_DATA_RATE: ";str$;"\n"
+    rc = LORAMACGetOption(LORAMAC_OPT_CHANNELMASK, str$)
+    print "LORAMAC_OPT_CHANNELMASK: ";str$;
 endfunc 1
 
 //==============================================================================
@@ -549,13 +559,13 @@ sub Initialise()
     
     //Set the temperature sensor up with 1/3 scaling
     rc = GpioSetFunc(TEMP_SENS_PIN, 3, 0x13)
-	
-	//Setting for Button1
+    
+    //Setting for Button1
     rc=GpioSetFunc(SPI_CS_PIN, 2, 1)
     GpioWrite(SPI_CS_PIN, 1)
     rc=SpiOpen(0, 125000, 0, SPIHandle)
     //Configure Button1 as output by writing(opcode 0x40) 0x10 to register 0x00 
-	wr$="\40\00\10"
+    wr$="\40\00\10"
     GpioWrite(SPI_CS_PIN, 0)
     rc=SpiWrite(wr$)
     GpioWrite(SPI_CS_PIN, 1)
@@ -571,10 +581,8 @@ sub Initialise()
     rc = gpiosetfunc(BUTTON2,1,2)
     //Link Button2 to LED5
     rc = GpioBindEvent(0, BUTTON2 , 1)   //Binds a gpio transition low to EVGPIOCHAN0.
-	
-	
-	
-	//Automatically join the LoRa network if set
+    
+    //Automatically join the LoRa network if set
     if (AUTO_JOIN == 1) then
         rc = LORAMACJoin(JOIN_TYPE)
     endif
